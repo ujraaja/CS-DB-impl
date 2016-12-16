@@ -1,0 +1,355 @@
+/**
+ * JavaCC template file created by SF JavaCC plugin 1.5.28+ wizard for JavaCC 1.5.0+
+ */options{  static = true;
+}PARSER_BEGIN(grammar)package parser;
+
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.util.ArrayList;
+import java.util.List;
+
+import classes.AttributeType;
+import classes.BooleanFactor;
+import classes.BooleanTerm;
+import classes.ColumnName;
+import classes.CreateTableStatement;
+import classes.DeleteStatement;
+import classes.DropTableStatement;
+import classes.Expression;
+import classes.InsertStatement;
+import classes.Literal;
+import classes.SearchCondition;
+import classes.SelectStatement;
+import classes.Statement;
+import classes.Term;
+import lqp.TableManager;
+import storageManager.FieldType;
+import storageManager.StorageManager;
+
+public class grammar{  public static void main(String args []) throws ParseException, FileNotFoundException  {
+    if(args.length != 1) {
+        System.out.println("Input file name is missing...");
+        return;
+    }
+    System.setIn(new FileInputStream(args[0]));    grammar parser = new grammar(System.in);
+    new StorageManager();
+    new TableManager();
+    int i = 1;
+    while (true)    {      try      {
+        Statement stmt = grammar.statement();
+        if(stmt != null)
+            stmt.execute();
+      }      catch (Exception e)      {        System.out.println("NOK.");        System.out.println(e.getMessage());
+        e.printStackTrace();        grammar.ReInit(System.in);
+        break;      }      catch (Error e)      {        System.out.println("Incorrect statement...");        System.out.println(e.getMessage());
+        e.printStackTrace();
+        grammar.ReInit(System.in);
+        break;      }    }  }}PARSER_END(grammar)
+TOKEN :{
+< digit : ["0"-"9"] >
+| < letter : ["a"-"z"] >
+| < comp_op : "<" |">" | "=" >
+| < data_type : "INT" | "STR20" >
+| < literal_tok : "\"" (~["\""])* "\"" >}
+classes.Integer integer():
+{
+  classes.Integer itgr = new classes.Integer();
+  String s = "";
+  Token tok;
+}
+{
+  (
+    tok = < digit > { s += tok; }
+  )+
+  {
+    itgr.value = java.lang.Integer.parseInt(s);
+    return itgr;
+  }
+}
+
+String table_name():
+{
+  String s;
+}
+{
+  s = attribute_name()
+  { return s; }
+}
+
+String attribute_name():
+{
+  String s = "";
+  Token tok;
+}
+{
+  (
+	  tok = < letter > { s += tok; }
+	  (
+	    tok = < digit > { s += tok; }
+	    | tok = < letter > { s += tok; }
+	  )*
+	)
+  { return s; }
+}
+
+ColumnName column_name():
+{
+  ColumnName columnName = new ColumnName();
+}
+{
+  [ LOOKAHEAD(table_name() ".") columnName.tableName = table_name() "." ]
+  columnName.attribute = attribute_name()
+  { return columnName; }
+}
+
+Literal literal():
+{
+  Literal lit = new Literal();
+  Token tok;
+}
+{
+  tok = < literal_tok > {
+    lit.value = tok.toString();
+    lit.value = lit.value.substring(1, lit.value.length()-1);
+    return lit;
+  }
+}
+
+List<AttributeType> attribute_type_list():
+{
+  List<AttributeType> attributeTypes = new ArrayList<AttributeType>();
+  String an;
+  Token tok;
+  AttributeType attributeType;
+}
+{
+  (
+	  an = attribute_name() " " tok = < data_type > {
+	    attributeType = new AttributeType();
+	    attributeType.attribute = an;
+	    attributeType.type = (tok.toString().equals("INT")?FieldType.INT:FieldType.STR20);
+	    attributeTypes.add(attributeType);
+	  }
+	  (
+	    ", "
+	    an = attribute_name() " " tok = < data_type > {
+	        attributeType = new AttributeType();
+	        attributeType.attribute = an;
+	        attributeType.type = (tok.toString().equals("INT")?FieldType.INT:FieldType.STR20);
+	        attributeTypes.add(attributeType);
+	    }
+	  )*
+	)
+  { return attributeTypes; }
+}
+
+Term term():
+{
+  Term term;
+}
+{
+  (
+	  term = column_name()
+	  | term = integer()
+	  | term = literal()
+  )
+  { return term; }
+}
+
+List<Term> value_list():
+{
+  Term term;
+  List<Term> terms = new ArrayList<Term>(); 
+}
+{
+  (
+    (
+		  term = integer()
+		  | term = literal()
+		)
+	  { terms.add(term); }
+	  (
+	    ", "
+	    (
+		    term = integer()
+		    | term = literal()
+		  )
+	    { terms.add(term); }	  )*
+  )
+  { return terms; }
+}
+
+Expression expression():
+{
+  Expression exp = new Expression();
+}
+{
+  (    exp.term1 = term()
+    | "("
+      exp.term1 = term()
+      (
+        " + " { exp.operator = '+'; }
+        | " - " { exp.operator = '-'; }
+        | " * " { exp.operator = '*'; }
+      )
+      exp.term2 = term()
+      ")"
+  )
+  { return exp; }
+}
+
+BooleanFactor boolean_factor():
+{
+  BooleanFactor bf = new BooleanFactor();
+  Token tok;
+}
+{
+  bf.expression1 = expression()
+  " " tok = < comp_op > " " { bf.operator = tok.toString().charAt(0); }
+  bf.expression2 = expression()
+  { return bf; }
+}
+
+BooleanTerm boolean_term():
+{
+  BooleanTerm bt = new BooleanTerm();
+}
+{
+  (    bt.booleanFactor = boolean_factor()
+    [
+      " AND "
+      bt.booleanTerm = boolean_term()    ]
+  )
+  { return bt; }
+}
+
+SearchCondition search_condition():
+{
+  SearchCondition sc = new SearchCondition();
+}
+{
+  (
+    sc.booleanTerm = boolean_term()
+    [
+      " OR "
+      sc.searchCondition = search_condition()
+    ]
+  )
+  { return sc; }
+}
+
+InsertStatement insert_statement():
+{
+  InsertStatement stmt = new InsertStatement();
+  String s;
+}
+{
+  "INSERT INTO "
+  stmt.tableName = table_name()
+  " ("
+  (
+    s = attribute_name() { stmt.attributeList.add(s); }
+    (      ", "
+      s = attribute_name() { stmt.attributeList.add(s); }
+    )*  )
+  ")"
+  (
+    (
+      " VALUES ("
+      stmt.valueList = value_list()
+      ")"    ) | (
+      " "
+      stmt.selectStatement = select_statement()
+    )
+  )
+  { return stmt; }
+}
+
+DeleteStatement delete_statement():
+{
+  DeleteStatement stmt = new DeleteStatement();
+}
+{
+  (
+    "DELETE FROM "
+    stmt.tableName = table_name()
+    [ " WHERE " stmt.searchCondition = search_condition() ]
+  )
+  { return stmt; }
+}
+
+SelectStatement select_statement():
+{
+  SelectStatement stmt = new SelectStatement();
+  ColumnName cn;
+  String s;
+}
+{
+  (
+  "SELECT "
+  [ "DISTINCT " { stmt.isDistinct = true; } ]
+  (
+    "*" { stmt.selectList = null; }
+    | (
+        cn = column_name() {
+          stmt.selectList = new ArrayList<ColumnName>();
+          stmt.selectList.add(cn);
+        }
+        (
+          ", "
+          cn = column_name() { stmt.selectList.add(cn); }        )*
+      )
+  )
+  " FROM "
+  (
+    s = table_name() {
+      stmt.tableList = new ArrayList<String>();
+      stmt.tableList.add(s);
+    }
+    (
+      ", "
+      s = table_name() {
+        stmt.tableList.add(s);
+      }    )*  )
+  [ " WHERE " stmt.searchCondition = search_condition() ]
+  [ " ORDER BY " stmt.columnName = column_name() ]
+  )
+  { return stmt; }
+}
+
+CreateTableStatement create_table_statement():
+{
+  CreateTableStatement stmt = new CreateTableStatement();
+}
+{
+  "CREATE TABLE "  stmt.tableName = table_name()
+  " ("
+  stmt.attrTypeList = attribute_type_list()
+  ")"
+  { return stmt; }
+}
+
+DropTableStatement drop_table_statement():
+{
+  DropTableStatement stmt = new DropTableStatement();
+}
+{
+  "DROP TABLE "
+  stmt.tableName = table_name()
+  { return stmt; }
+}
+
+Statement statement():
+{
+  Statement statement = null;
+}
+{
+  [    statement = create_table_statement()
+    | statement = drop_table_statement()
+    | statement = select_statement()
+    | statement = delete_statement()
+    | statement = insert_statement()
+  ]
+  "\n"
+  { return statement; }
+}
